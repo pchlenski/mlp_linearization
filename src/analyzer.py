@@ -14,6 +14,9 @@ class SAELinearizer:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
 
+        self.set_model(model_name, dataset_name, sae_names, **kwargs)
+
+    def set_model(self, model_name: str, dataset_name: str, sae_names: List[str], **kwargs):
         # Load model, data, and SAE(s)
         self.model = load_model(model_name, **kwargs).to(self.device)
         self.data = load_data(self.model, dataset_name, **kwargs).to(self.device)
@@ -25,9 +28,7 @@ class SAELinearizer:
         self.f1_scores = {name: f1_scores(**_kw1, sae=self.saes[name]) for name in self.saes}
 
         # Unset downstream values
-        del self.sae, self.feature_idx, self.feature_vector, self.sample, self.token_idx, self.path
-        del self.frequencies, self.f1_scores
-        del self.top_examples, self.bottom_examples, self.uniform_examples, self.uniform_ranked_examples
+        self._clean("model")
 
     def set_feature(self, sae_name: str, feature_idx: int):
         # Set feature and feature vector
@@ -49,7 +50,7 @@ class SAELinearizer:
         self.uniform_ranked_logit_tokens = uniform_logit_tokens(**kw2, rank=True)
 
         # Unset downstream values
-        del self.sample, self.token_idx, self.path
+        self._clean("feature")
 
     def set_example(self, token_idx: int, example_idx: int = None, prompt: str = None):
         # Ensure we have something to work with
@@ -60,20 +61,20 @@ class SAELinearizer:
 
         # Turn prompt or index into equivalent tensors
         if prompt is not None:
-            sample = self.model.tokenizer(prompt).to(self.device)  # TODO: verify this does <BOS> <EOS> stuff or fix
+            example = self.model.tokenizer(prompt).to(self.device)  # TODO: verify this does <BOS> <EOS> stuff or fix
         else:
-            sample = self.data[example_idx]
+            example = self.data[example_idx]
 
         # Set example and token index
-        self.sample = sample
+        self.example = example
         self.token_idx = token_idx
-        self._kw3 = {**kw2, "sample": self.sample, "token_idx": self.token_idx}
+        self._kw3 = {**kw2, "example": self.example, "token_idx": self.token_idx}
 
         # Run analysis
         self.attributions = attributions(**kw3)
 
         # Unset downstream values
-        del self.path
+        self._clean("example")
 
     def set_path(self, path: List[str]):
         self.path = path
@@ -82,3 +83,29 @@ class SAELinearizer:
         # Run analysis
         self.feature_vectors = feature_vectors(**kw4, path=self.path)
         self.deembeddings = deembeddings(**kw4, path=self.path)
+
+    def _clean(self, component: str):
+        # Wipe path-level attributes
+        if component in ["model", "feature", "example"]:
+            del self.path, self._kw4, self.feature_vectors, self.deembeddings
+
+        # Wipe example-level attributes
+        if component in ["model", "feature"]:
+            del self.sample, self.token_idx, self._kw3, self.attributions
+
+        # Wipe feature-level attributes
+        if component == "model":
+            del (
+                self.sae,
+                self.feature_idx,
+                self.feature_vector,
+                self._kw2,
+                self.top_examples,
+                self.bottom_examples,
+                self.uniform_examples,
+                self.uniform_ranked_examples,
+                self.top_logit_tokens,
+                self.bottom_logit_tokens,
+                self.uniform_logit_tokens,
+                self.uniform_ranked_logit_tokens,
+            )
