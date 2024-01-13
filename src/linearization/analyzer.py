@@ -1,3 +1,5 @@
+import torch
+
 from typing import List
 
 from .loading import load_model, load_data, load_sae
@@ -24,30 +26,36 @@ class SAELinearizer:
         self._kw1 = {"model": self.model, "data": self.data}
 
         # Run analysis
-        self.frequencies = {name: frequencies(**_kw1, sae=self.saes[name]) for name in self.saes}
-        self.f1_scores = {name: f1_scores(**_kw1, sae=self.saes[name]) for name in self.saes}
+        self.frequencies = {name: frequencies(**self._kw1, sae=self.saes[name]) for name in self.saes}
+        self.f1_scores = {name: f1_scores(**self._kw1, sae=self.saes[name]) for name in self.saes}
 
         # Unset downstream values
         self._clean("model")
 
-    def set_feature(self, sae_name: str, feature_idx: int):
+    def set_feature(self, feature_idx: int, sae_name: str = None):
+        # Single-SAE case + no SAE name provided
+        if sae_name is None and len(self.saes) == 1:
+            sae_name = list(self.saes.keys())[0]
+        elif sae_name is None:
+            raise ValueError("Must provide SAE name when multiple SAES are loaded")
+
         # Set feature and feature vector
         self.sae = self.saes[sae_name]
         self.feature_idx = feature_idx
         self.feature_vector = self.saes[sae_name][:, feature_idx]
-        self._kw2 = {**kw1, "sae": self.sae, "feature_idx": self.feature_idx}
+        self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx}
 
         # SAE analysis
-        self.top_examples = top_activating_examples(**kw2)
-        self.bottom_examples = top_activating_examples(**kw2, reverse=True)
-        self.uniform_examples = uniform_examples(**kw2)
-        self.uniform_ranked_examples = uniform_examples(**kw2, rank=True)
+        self.top_examples = top_activating_examples(**self._kw2)
+        self.bottom_examples = top_activating_examples(**self._kw2, reverse=True)
+        self.uniform_examples = uniform_examples(**self._kw2)
+        self.uniform_ranked_examples = uniform_examples(**self._kw2, rank=True)
 
         # Logit weights
-        self.top_logit_tokens = top_logit_tokens(**kw2)
-        self.bottom_logit_tokens = top_logit_tokens(**kw2, reverse=True)
-        self.uniform_logit_tokens = uniform_logit_tokens(**kw2)
-        self.uniform_ranked_logit_tokens = uniform_logit_tokens(**kw2, rank=True)
+        self.top_logit_tokens = top_logit_tokens(**self._kw2)
+        self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
+        self.uniform_logit_tokens = uniform_logit_tokens(**self._kw2)
+        self.uniform_ranked_logit_tokens = uniform_logit_tokens(**self._kw2, rank=True)
 
         # Unset downstream values
         self._clean("feature")
@@ -68,21 +76,27 @@ class SAELinearizer:
         # Set example and token index
         self.example = example
         self.token_idx = token_idx
-        self._kw3 = {**kw2, "example": self.example, "token_idx": self.token_idx}
+        self._kw3 = {**self._kw2, "example": self.example, "token_idx": self.token_idx}
 
         # Run analysis
-        self.attributions = attributions(**kw3)
+        self.attributions = attributions(**self._kw3)
 
         # Unset downstream values
         self._clean("example")
 
     def set_path(self, path: List[str]):
-        self.path = path
-        self._kw4 = {**kw3, "path": self.path}
+        # Input validation and cleaning (use proper component names)
+        path_names_fixed = []
+        for component in path:
+            pass  # TODO: write validation code
+
+        # Set attributes
+        self.path = path_names_fixed
+        self._kw4 = {**self._kw3, "path": self.path}
 
         # Run analysis
-        self.feature_vectors = feature_vectors(**kw4, path=self.path)
-        self.deembeddings = deembeddings(**kw4, path=self.path)
+        self.feature_vectors = feature_vectors(**self._kw4, path=self.path)
+        self.deembeddings = deembeddings(**self._kw4, path=self.path)
 
     def _clean(self, component: str):
         # Wipe path-level attributes
