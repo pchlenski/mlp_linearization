@@ -79,7 +79,7 @@ class SAELinearizer:
         # Set feature and feature vector
         self.sae = self.saes[sae_name]
         self.feature_idx = feature_idx
-        self.feature_vector = self.saes[sae_name][:, feature_idx]
+        self.feature_vector = self.sae.W_enc[:, feature_idx]
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx}
 
         # Run analysis

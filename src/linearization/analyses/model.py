@@ -2,6 +2,7 @@ import torch
 import tqdm
 
 from collections import Counter
+from typing import Dict, List
 
 # from scipy.sparse import csr_matrix
 from transformer_lens.utils import get_act_name
@@ -11,15 +12,49 @@ from ..vars import SAE_CFG
 
 
 def frequencies(model, sae, data, layer, num_batches=25, act_name="post") -> torch.Tensor:
+    """
+    Given a model, data, and SAE, return a tensor of frequencies for each SAE feature. Also prints number of dead
+    features.
+
+    Note that this is a sample over a random subset of the data, so the frequencies are not exact.
+
+    Args:
+        model: A HookedTransformer model from transformer_lens.
+        sae: A trained sparse autoencoder.
+        data: A tensor of data with shape (n_samples, n_tokens).
+        layer: The layer whose activations the SAE is trained on.
+        num_batches: The number of batches to sample.
+        act_name: The name of the activation to analyze: "post" or "mid"
+
+    Returns:
+        A tensor of activation frequencies with shape (n_features,).
+    """
     return get_freqs(
         model=model, local_encoder=sae, all_tokens=data, layer=layer, num_batches=num_batches, act_name=act_name
     )
 
 
-def f1_scores(model, sae, data, layer, num_batches=25, act_name="post") -> dict:
+def f1_scores(model, sae, data, layer, num_batches=25, act_name="post") -> Dict[str, List[float]]:
+    """
+    Given a model, data, and SAE, return a dict of precision, recall, and f1 scores for each SAE feature.
+
+    Note that this is a sample over a random subset of the data, so the frequencies are not exact.
+
+    Args:
+        model: A HookedTransformer model from transformer_lens.
+        sae: A trained sparse autoencoder.
+        data: A tensor of data with shape (n_samples, n_tokens).
+        layer: The layer whose activations the SAE is trained on.
+        num_batches: The number of batches to sample.
+        act_name: The name of the activation to analyze: "post" or "mid"
+
+    Returns:
+        A dict of precision, recall, and f1 scores for each SAE feature, each of which is a list of floats.
+    """
     feature_counters = [Counter() for _ in range(sae.W_enc.shape[1])]
     token_counter = Counter()
 
+    # Count up activating tokens and total tokens for our features
     for i in tqdm.trange(num_batches):
         tokens = data[torch.randperm(len(data))[: SAE_CFG["model_batch_size"]]]
 
