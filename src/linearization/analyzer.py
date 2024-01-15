@@ -3,6 +3,8 @@ import torch
 from typing import List
 
 from .loading import load_model, load_data, load_sae
+from .vars import MODEL, RUN, DATASET
+
 from .analyses.model import frequencies, f1_scores
 from .analyses.feature import top_activating_examples, uniform_examples, top_logit_tokens, uniform_logit_tokens
 from .analyses.example import attributions
@@ -10,29 +12,64 @@ from .analyses.path import feature_vectors, deembeddings
 
 
 class SAELinearizer:
-    def __init__(self, model_name: str, dataset_name: str, sae_names: List[str], device: str = None, **kwargs):
+    def __init__(
+        self,
+        model_name: str = MODEL,
+        dataset_name: str = DATASET,
+        sae_names: List[str] = [RUN],
+        layers: List[int] = [0],
+        act_name: str = "post",
+        device: str = None,
+        **kwargs
+    ):
         # Set device
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
 
-        self.set_model(model_name, dataset_name, sae_names, **kwargs)
+        self.set_model(
+            model_name=model_name,
+            dataset_name=dataset_name,
+            sae_names=sae_names,
+            layers=layers,
+            act_name="post",
+            **kwargs
+        )
 
-    def set_model(self, model_name: str, dataset_name: str, sae_names: List[str], **kwargs):
+    def set_model(
+        self,
+        model_name: str,
+        dataset_name: str,
+        sae_names: List[str],
+        layers: List[int],
+        act_name: str,
+        seed=42,
+        run_analysis=True,
+        **kwargs
+    ):
         # Load model, data, and SAE(s)
         self.model = load_model(model_name, **kwargs).to(self.device)
         self.data = load_data(self.model, dataset_name, **kwargs).to(self.device)
         self.saes = {sae_name: load_sae(sae_name, **kwargs).to(self.device) for sae_name in sae_names}
+        self.sae_layers = dict(zip(sae_names, layers))
+        self.act_name = "post"
         self._kw1 = {"model": self.model, "data": self.data}
 
         # Run analysis
-        self.frequencies = {name: frequencies(**self._kw1, sae=self.saes[name]) for name in self.saes}
-        self.f1_scores = {name: f1_scores(**self._kw1, sae=self.saes[name]) for name in self.saes}
+        if run_analysis:
+            torch.manual_seed(seed)
+            self.frequencies = {
+                name: frequencies(**self._kw1, sae=self.saes[name], layer=self.sae_layers[name], act_name=act_name)
+                for name in self.saes
+            }
+            self.f1_scores = {
+                name: f1_scores(**self._kw1, sae=self.saes[name], layer=self.sae_layers[name]) for name in self.saes
+            }
 
         # Unset downstream values
         self._clean("model")
 
-    def set_feature(self, feature_idx: int, sae_name: str = None):
+    def set_feature(self, feature_idx: int, sae_name: str = None, run_analysis=True):
         # Single-SAE case + no SAE name provided
         if sae_name is None and len(self.saes) == 1:
             sae_name = list(self.saes.keys())[0]
@@ -45,17 +82,19 @@ class SAELinearizer:
         self.feature_vector = self.saes[sae_name][:, feature_idx]
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx}
 
-        # SAE analysis
-        self.top_examples = top_activating_examples(**self._kw2)
-        self.bottom_examples = top_activating_examples(**self._kw2, reverse=True)
-        self.uniform_examples = uniform_examples(**self._kw2)
-        self.uniform_ranked_examples = uniform_examples(**self._kw2, rank=True)
+        # Run analysis
+        if run_analysis:
+            # SAE level
+            self.top_examples = top_activating_examples(**self._kw2)
+            self.bottom_examples = top_activating_examples(**self._kw2, reverse=True)
+            self.uniform_examples = uniform_examples(**self._kw2)
+            self.uniform_ranked_examples = uniform_examples(**self._kw2, rank=True)
 
-        # Logit weights
-        self.top_logit_tokens = top_logit_tokens(**self._kw2)
-        self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
-        self.uniform_logit_tokens = uniform_logit_tokens(**self._kw2)
-        self.uniform_ranked_logit_tokens = uniform_logit_tokens(**self._kw2, rank=True)
+            # Logit level
+            self.top_logit_tokens = top_logit_tokens(**self._kw2)
+            self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
+            self.uniform_logit_tokens = uniform_logit_tokens(**self._kw2)
+            self.uniform_ranked_logit_tokens = uniform_logit_tokens(**self._kw2, rank=True)
 
         # Unset downstream values
         self._clean("feature")
@@ -101,25 +140,31 @@ class SAELinearizer:
     def _clean(self, component: str):
         # Wipe path-level attributes
         if component in ["model", "feature", "example"]:
-            del self.path, self._kw4, self.feature_vectors, self.deembeddings
+            for attr in ["path", "_kw4", "feature_vectors", "deembeddings"]:
+                if hasattr(self, attr):
+                    delattr(self, attr)
 
         # Wipe example-level attributes
         if component in ["model", "feature"]:
-            del self.sample, self.token_idx, self._kw3, self.attributions
+            for attr in ["example", "token_idx", "_kw3", "attributions"]:
+                if hasattr(self, attr):
+                    delattr(self, attr)
 
         # Wipe feature-level attributes
         if component == "model":
-            del (
-                self.sae,
-                self.feature_idx,
-                self.feature_vector,
-                self._kw2,
-                self.top_examples,
-                self.bottom_examples,
-                self.uniform_examples,
-                self.uniform_ranked_examples,
-                self.top_logit_tokens,
-                self.bottom_logit_tokens,
-                self.uniform_logit_tokens,
-                self.uniform_ranked_logit_tokens,
-            )
+            for attr in [
+                "sae",
+                "feature_idx",
+                "feature_vector",
+                "_kw2",
+                "top_examples",
+                "bottom_examples",
+                "uniform_examples",
+                "uniform_ranked_examples",
+                "top_logit_tokens",
+                "bottom_logit_tokens",
+                "uniform_logit_tokens",
+                "uniform_ranked_logit_tokens",
+            ]:
+                if hasattr(self, attr):
+                    delattr(self, attr)
