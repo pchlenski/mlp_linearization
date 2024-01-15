@@ -1,12 +1,12 @@
 import torch
 
-from typing import List
+from typing import List, Union
 
 from .loading import load_model, load_data, load_sae
 from .vars import MODEL, RUN, DATASET
 
 from .analyses.model import frequencies, f1_scores
-from .analyses.feature import top_activating_examples, uniform_examples, top_logit_tokens, uniform_logit_tokens
+from .analyses.feature import top_activating_examples, top_logit_tokens
 from .analyses.example import attributions
 from .analyses.path import feature_vectors, deembeddings
 
@@ -78,39 +78,46 @@ class SAELinearizer:
 
         # Set feature and feature vector
         self.sae = self.saes[sae_name]
+        self.layer = self.sae_layers[sae_name]
         self.feature_idx = feature_idx
         self.feature_vector = self.sae.W_enc[:, feature_idx]
-        self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx}
+        self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx, "layer": self.layer}
 
         # Run analysis
         if run_analysis:
             # SAE level
             self.top_examples = top_activating_examples(**self._kw2)
             self.bottom_examples = top_activating_examples(**self._kw2, reverse=True)
-            self.uniform_examples = uniform_examples(**self._kw2)
-            self.uniform_ranked_examples = uniform_examples(**self._kw2, rank=True)
+            self.uniform_examples = top_activating_examples(**self._kw2, uniform=True)
+            self.uniform_ranked_examples = top_activating_examples(**self._kw2, uniform=True, rank=True)
 
             # Logit level
-            self.top_logit_tokens = top_logit_tokens(**self._kw2)
-            self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
-            self.uniform_logit_tokens = uniform_logit_tokens(**self._kw2)
-            self.uniform_ranked_logit_tokens = uniform_logit_tokens(**self._kw2, rank=True)
+            # self.top_logit_tokens = top_logit_tokens(**self._kw2)
+            # self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
 
         # Unset downstream values
         self._clean("feature")
 
-    def set_example(self, token_idx: int, example_idx: int = None, prompt: str = None):
-        # Ensure we have something to work with
-        if example_idx is None and prompt is None:
-            raise ValueError("Must provide either example_idx or prompt")
-        elif example_idx is not None and prompt is not None:
-            raise ValueError("Cannot provide both example_idx and prompt")
-
+    def set_example(self, example: Union[str, int], token_idx: int, run_analysis=True):
         # Turn prompt or index into equivalent tensors
-        if prompt is not None:
-            example = self.model.tokenizer(prompt).to(self.device)  # TODO: verify this does <BOS> <EOS> stuff or fix
+        if isinstance(example, str):
+            example = self.model.tokenizer.encode(example)
+            example = torch.tensor(example)
+            print(example.shape)
+
+            # Deal with <BOS> and <EOS> tokens
+            bos = self.model.tokenizer.bos_token_id
+            eos = self.model.tokenizer.eos_token_id
+            if example[0] != bos:
+                example = torch.cat([torch.tensor([bos]), example])
+            if example[-1] != eos:
+                example = torch.cat([example, torch.tensor([eos])])
+
+        elif isinstance(example, int):
+            example = self.data[example]
+
         else:
-            example = self.data[example_idx]
+            raise ValueError("Example must be a string or integer")
 
         # Set example and token index
         self.example = example
@@ -118,7 +125,8 @@ class SAELinearizer:
         self._kw3 = {**self._kw2, "example": self.example, "token_idx": self.token_idx}
 
         # Run analysis
-        self.attributions = attributions(**self._kw3)
+        if run_analysis:
+            self.attributions = attributions(**self._kw3)
 
         # Unset downstream values
         self._clean("example")
@@ -154,6 +162,7 @@ class SAELinearizer:
         if component == "model":
             for attr in [
                 "sae",
+                "layer",
                 "feature_idx",
                 "feature_vector",
                 "_kw2",
