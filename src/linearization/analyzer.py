@@ -92,8 +92,8 @@ class SAELinearizer:
             self.uniform_ranked_examples = top_activating_examples(**self._kw2, uniform=True, rank=True)
 
             # Logit level
-            # self.top_logit_tokens = top_logit_tokens(**self._kw2)
-            # self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
+            self.top_logit_tokens = top_logit_tokens(**self._kw2)
+            self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
 
         # Unset downstream values
         self._clean("feature")
