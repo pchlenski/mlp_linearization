@@ -112,7 +112,8 @@ def top_logit_tokens(model, sae, feature_idx, num_examples=10, reverse=False, **
         A dict of top activating tokens and their logit scores.
     """
     logit_unembed = sae.W_dec[feature_idx] @ model.W_out @ model.W_U
+    logit_unembed = logit_unembed.flatten()
 
     idx = torch.topk(logit_unembed.flatten(), num_examples, dim=0, largest=not reverse).indices
 
-    return {"tokens": idx, "logits": logit_unembed[idx]}
+    return {"tokens": idx.cpu(), "logits": logit_unembed[idx].cpu()}

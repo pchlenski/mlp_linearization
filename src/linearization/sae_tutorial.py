@@ -178,7 +178,7 @@ def get_freqs(all_tokens, model, act_name="post", layer=0, num_batches=25, local
         total += hidden.shape[0]
     act_freq_scores /= total
     num_dead = (act_freq_scores == 0).float().mean()
-    print("Num dead", num_dead)
+    print("Num dead", num_dead.item())
     return act_freq_scores
 
 

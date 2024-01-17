@@ -18,7 +18,7 @@ class SAELinearizer:
         dataset_name: str = DATASET,
         sae_names: List[str] = [RUN],
         layers: List[int] = [0],
-        act_name: str = "post",
+        act_name: str = "resid_mid",
         device: str = None,
         **kwargs
     ):
@@ -26,13 +26,14 @@ class SAELinearizer:
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
+        self.act_name = act_name
 
         self.set_model(
             model_name=model_name,
             dataset_name=dataset_name,
             sae_names=sae_names,
             layers=layers,
-            act_name="post",
+            act_name=act_name,
             **kwargs
         )
 
@@ -52,7 +53,7 @@ class SAELinearizer:
         self.data = load_data(self.model, dataset_name, **kwargs).to(self.device)
         self.saes = {sae_name: load_sae(sae_name, **kwargs).to(self.device) for sae_name in sae_names}
         self.sae_layers = dict(zip(sae_names, layers))
-        self.act_name = "post"
+        self.act_name = act_name
         self._kw1 = {"model": self.model, "data": self.data}
 
         # Run analysis
@@ -80,7 +81,10 @@ class SAELinearizer:
         self.sae = self.saes[sae_name]
         self.layer = self.sae_layers[sae_name]
         self.feature_idx = feature_idx
-        self.feature_vector = self.sae.W_enc[:, feature_idx]
+        if self.act_name == "post":
+            self.feature_vector = self.sae.W_enc[:, feature_idx]
+        elif self.act_name == "resid_mid":
+            self.feature_vector = self.sae.W_enc[:, feature_idx] @ self.model.blocks[self.layer].mlp.W_out
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx, "layer": self.layer}
 
         # Run analysis
@@ -108,10 +112,14 @@ class SAELinearizer:
             # Deal with <BOS> and <EOS> tokens
             bos = self.model.tokenizer.bos_token_id
             eos = self.model.tokenizer.eos_token_id
+            pad = self.model.tokenizer.pad_token_id
             if example[0] != bos:
                 example = torch.cat([torch.tensor([bos]), example])
             if example[-1] != eos:
                 example = torch.cat([example, torch.tensor([eos])])
+            # if len(example) != self.data.shape[1]:
+            #     n_pad = self.data.shape[1] - len(example)
+            #     example = torch.cat([example, torch.tensor([pad] * n_pad)])
 
         elif isinstance(example, int):
             example = self.data[example]
@@ -122,11 +130,16 @@ class SAELinearizer:
         # Set example and token index
         self.example = example
         self.token_idx = token_idx
+        print(f"Token: {self.model.tokenizer.decode(self.example[self.token_idx])}") # Sanity check token idx
         self._kw3 = {**self._kw2, "example": self.example, "token_idx": self.token_idx}
 
         # Run analysis
         if run_analysis:
-            self.attributions = attributions(**self._kw3)
+            # self.attributions = attributions(**self._kw3)
+            self.attributions = attributions(
+                self.model, self.feature_vector, self.example, self.token_idx, self.layer
+            )
+        
 
         # Unset downstream values
         self._clean("example")
