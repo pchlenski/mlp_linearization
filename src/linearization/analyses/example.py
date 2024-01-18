@@ -90,11 +90,11 @@ def attributions(model, feature_vector, example, token_idx, layer, use_ln=True, 
         x_mid, lambda x: my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=False), feature_vector
     )[0, 0]
     attn_contribs = torch.cat(
-        [_get_attn_head_contribs(model, l, range_normal=feature_mid, data=example) for l in range(len(model.blocks))],
+        [_get_attn_head_contribs(model, l, range_normal=feature_mid, data=example) for l in range(layer + 1)],
         dim=0,
     )
     ov_contribs = torch.cat(
-        [_get_attn_head_contribs_ov(model, l, range_normal=feature_mid, data=example) for l in range(len(model.blocks))],
+        [_get_attn_head_contribs_ov(model, l, range_normal=feature_mid, data=example) for l in range(layer + 1)],
         dim=0,
     )
     return {"attn": attn_contribs, "ov": ov_contribs}

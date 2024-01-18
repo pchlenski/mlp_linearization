@@ -49,7 +49,7 @@ def load_data(
 def load_sae(
     run_id: str = RUN, use_cuda: bool = True, half_precision: bool = True, verbose: bool = True, **kwargs
 ) -> AutoEncoder:
-    encoder = AutoEncoder.load_from_hf(run_id)
+    encoder = AutoEncoder.load(run_id)
     encoder = encoder.cuda() if use_cuda else encoder
     encoder = encoder.to(torch.float16) if half_precision else encoder
     print(f"Encoder device: {next(encoder.parameters()).device}") if verbose else None

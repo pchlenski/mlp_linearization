@@ -31,7 +31,8 @@ cfg = SAE_CFG
 class AutoEncoder(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        d_hidden = cfg["d_mlp"] * cfg["dict_mult"]
+        # d_hidden = cfg["d_mlp"] * cfg["dict_mult"]
+        d_hidden = int(cfg["d_mlp"] * cfg["dict_mult"])  # Because OpenAI's SAE has a weird expansion factor
         d_mlp = cfg["d_mlp"]
         l1_coeff = cfg["l1_coeff"]
         dtype = DTYPES[cfg["enc_dtype"]]
@@ -81,6 +82,15 @@ class AutoEncoder(nn.Module):
     #     return self
 
     @classmethod
+    def load(cls, version):
+        if version in ["run1", "run2", "l0", "l1"]:
+            return cls.load_from_hf(version)
+        elif isinstance(version, int):
+            return cls.load_gpt2(version)
+        else:
+            raise ValueError(f"Unknown version {version}")
+
+    @classmethod
     def load_from_hf(cls, version):
         """
         Loads the saved autoencoder from HuggingFace.
@@ -108,6 +118,33 @@ class AutoEncoder(nn.Module):
         self.load_state_dict(
             utils.download_file_from_hf("NeelNanda/sparse_autoencoder", f"{hf_id}.pt", force_is_torch=True)
         )
+        return self
+
+    @classmethod
+    def load_gpt2(cls, version):
+        # Integer version = gpt2-small layers
+        print(f"Loading GPT2-small layer {version} from disk")
+        cfg = {"d_mlp": 3072, "dict_mult": 10.6667, "l1_coeff": 0.01, "enc_dtype": "fp32", "seed": 42}
+        self = cls(cfg=cfg)
+        # self.load_state_dict(torch.load(f"/home/phil/mlp_linearization/data/openai_sae/mlp_post_act/{version}.pt"))
+        original_state_dict = torch.load(f"/data_shared/openai_sae/mlp_post_act/{version}.pt")
+
+        # Define a mapping from the original keys to the keys expected by your model
+        key_map = {
+            "pre_bias": "b_dec",
+            "latent_bias": "b_enc",
+            "decoder.weight": "W_dec",
+            "encoder.weight": "W_enc",
+        }
+
+        # Map the keys
+        new_state_dict = {key_map.get(k, k): v for k, v in original_state_dict.items()}
+        new_state_dict["W_dec"] = new_state_dict["W_dec"].T
+        new_state_dict["W_enc"] = new_state_dict["W_enc"].T
+        new_state_dict.pop("stats_last_nonzero")
+
+        # Load the new state_dict into your model
+        self.load_state_dict(new_state_dict)
         return self
 
 

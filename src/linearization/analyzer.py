@@ -18,9 +18,9 @@ class SAELinearizer:
         dataset_name: str = DATASET,
         sae_names: List[str] = [RUN],
         layers: List[int] = [0],
-        act_name: str = "resid_mid",
+        act_name: str = "post",
         device: str = None,
-        **kwargs
+        **kwargs,
     ):
         # Set device
         if device is None:
@@ -34,7 +34,7 @@ class SAELinearizer:
             sae_names=sae_names,
             layers=layers,
             act_name=act_name,
-            **kwargs
+            **kwargs,
         )
 
     def set_model(
@@ -46,7 +46,8 @@ class SAELinearizer:
         act_name: str,
         seed=42,
         run_analysis=True,
-        **kwargs
+        num_batches=25,
+        **kwargs,
     ):
         # Load model, data, and SAE(s)
         self.model = load_model(model_name, **kwargs).to(self.device)
@@ -54,23 +55,27 @@ class SAELinearizer:
         self.saes = {sae_name: load_sae(sae_name, **kwargs).to(self.device) for sae_name in sae_names}
         self.sae_layers = dict(zip(sae_names, layers))
         self.act_name = act_name
-        self._kw1 = {"model": self.model, "data": self.data}
+        self.seed = seed
+        self._kw1 = {"model": self.model, "data": self.data, "act_name": self.act_name}
 
         # Run analysis
         if run_analysis:
-            torch.manual_seed(seed)
+            torch.manual_seed(self.seed)
             self.frequencies = {
-                name: frequencies(**self._kw1, sae=self.saes[name], layer=self.sae_layers[name], act_name=act_name)
+                name: frequencies(
+                    **self._kw1, sae=self.saes[name], layer=self.sae_layers[name], num_batches=num_batches
+                )
                 for name in self.saes
             }
             self.f1_scores = {
-                name: f1_scores(**self._kw1, sae=self.saes[name], layer=self.sae_layers[name]) for name in self.saes
+                name: f1_scores(**self._kw1, sae=self.saes[name], layer=self.sae_layers[name], num_batches=num_batches)
+                for name in self.saes
             }
 
         # Unset downstream values
         self._clean("model")
 
-    def set_feature(self, feature_idx: int, sae_name: str = None, run_analysis=True):
+    def set_feature(self, feature_idx: int, sae_name: str = None, run_analysis=True, num_batches=25):
         # Single-SAE case + no SAE name provided
         if sae_name is None and len(self.saes) == 1:
             sae_name = list(self.saes.keys())[0]
@@ -81,19 +86,23 @@ class SAELinearizer:
         self.sae = self.saes[sae_name]
         self.layer = self.sae_layers[sae_name]
         self.feature_idx = feature_idx
-        if self.act_name == "post":
+        if self.act_name == "mlp_out":
             self.feature_vector = self.sae.W_enc[:, feature_idx]
-        elif self.act_name == "resid_mid":
+        elif self.act_name == "post":
             self.feature_vector = self.sae.W_enc[:, feature_idx] @ self.model.blocks[self.layer].mlp.W_out
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx, "layer": self.layer}
 
         # Run analysis
         if run_analysis:
+            torch.manual_seed(self.seed)
+
             # SAE level
-            self.top_examples = top_activating_examples(**self._kw2)
-            self.bottom_examples = top_activating_examples(**self._kw2, reverse=True)
-            self.uniform_examples = top_activating_examples(**self._kw2, uniform=True)
-            self.uniform_ranked_examples = top_activating_examples(**self._kw2, uniform=True, rank=True)
+            self.top_examples = top_activating_examples(**self._kw2, num_batches=num_batches)
+            self.bottom_examples = top_activating_examples(**self._kw2, num_batches=num_batches, reverse=True)
+            self.uniform_examples = top_activating_examples(**self._kw2, num_batches=num_batches, uniform=True)
+            self.uniform_ranked_examples = top_activating_examples(
+                **self._kw2, num_batches=num_batches, uniform=True, rank=True
+            )
 
             # Logit level
             self.top_logit_tokens = top_logit_tokens(**self._kw2)
@@ -130,21 +139,19 @@ class SAELinearizer:
         # Set example and token index
         self.example = example
         self.token_idx = token_idx
-        print(f"Token: {self.model.tokenizer.decode(self.example[self.token_idx])}") # Sanity check token idx
+        print(f"Token: {self.model.tokenizer.decode(self.example[self.token_idx])}")  # Sanity check token idx
         self._kw3 = {**self._kw2, "example": self.example, "token_idx": self.token_idx}
 
         # Run analysis
         if run_analysis:
+            torch.manual_seed(self.seed)
             # self.attributions = attributions(**self._kw3)
-            self.attributions = attributions(
-                self.model, self.feature_vector, self.example, self.token_idx, self.layer
-            )
-        
+            self.attributions = attributions(self.model, self.feature_vector, self.example, self.token_idx, self.layer)
 
         # Unset downstream values
         self._clean("example")
 
-    def set_path(self, path: List[str]):
+    def set_path(self, path: List[str], run_analysis=True):
         # Input validation and cleaning (use proper component names)
         path_names_fixed = []
         for component in path:
@@ -155,8 +162,11 @@ class SAELinearizer:
         self._kw4 = {**self._kw3, "path": self.path}
 
         # Run analysis
-        self.feature_vectors = feature_vectors(**self._kw4, path=self.path)
-        self.deembeddings = deembeddings(**self._kw4, path=self.path)
+        if run_analysis:
+            torch.manual_seed(self.seed)
+
+            self.feature_vectors = feature_vectors(**self._kw4)
+            self.deembeddings = deembeddings(**self._kw4)
 
     def _clean(self, component: str):
         # Wipe path-level attributes

@@ -97,7 +97,7 @@ def top_activating_examples(
     return {"examples": tokens[r], "activations": activations[r], "rows": r, "cols": c}
 
 
-def top_logit_tokens(model, sae, feature_idx, num_examples=10, reverse=False, **absorb):
+def top_logit_tokens(model, sae, feature_idx, layer, act_name, num_examples=10, reverse=False, **absorb):
     """
     Given an SAE feature index, return top activating tokens based on decoder logit scores.
 
@@ -107,11 +107,14 @@ def top_logit_tokens(model, sae, feature_idx, num_examples=10, reverse=False, **
         feature_idx: The index of the SAE feature to analyze.
         num_examples: The number of examples to return.
         reverse: Whether to return top or bottom activating examples.
+        mlp_out: Whether to use the SAE's MLP output layer instead of the MLP activations (resid_mid).
 
     Returns:
         A dict of top activating tokens and their logit scores.
     """
-    logit_unembed = sae.W_dec[feature_idx] @ model.W_out @ model.W_U
+    feature_resid = sae.W_enc[:, feature_idx]
+    feature_resid = feature_resid @ model.blocks[layer].mlp.W_out if act_name != "mlp_out" else feature_resid
+    logit_unembed = feature_resid @ model.W_U
     logit_unembed = logit_unembed.flatten()
 
     idx = torch.topk(logit_unembed.flatten(), num_examples, dim=0, largest=not reverse).indices
