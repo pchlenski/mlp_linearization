@@ -8,7 +8,7 @@ from .vars import MODEL, RUN, DATASET
 from .analyses.model import frequencies, f1_scores
 from .analyses.feature import top_activating_examples, top_logit_tokens
 from .analyses.example import attributions
-from .analyses.path import feature_vectors, deembeddings
+from .analyses.path import feature_vectors
 
 
 class SAELinearizer:
@@ -152,21 +152,31 @@ class SAELinearizer:
         self._clean("example")
 
     def set_path(self, path: List[str], run_analysis=True):
+        # Intake tuples: [("attention", layer, head), ("mlp", layer), etc.]
+        # Should be ordered from deepest to shallowest nodes of computation graph
         # Input validation and cleaning (use proper component names)
         path_names_fixed = []
         for component in path:
-            pass  # TODO: write validation code
+            if isinstance(component, tuple):
+                if component[0] == "attention":
+                    path_names_fixed.append(("attention", component[1], component[2]))
+                elif component[0] == "mlp":
+                    path_names_fixed.append(("mlp", component[1]))
+                else:
+                    raise ValueError("Invalid component name")
+            else:
+                raise ValueError("Invalid component type: need tuple")
 
         # Set attributes
         self.path = path_names_fixed
-        self._kw4 = {**self._kw3, "path": self.path}
+        self._kw4 = {**self._kw3, "start_vector": self.feature_vector, "path": self.path}
 
         # Run analysis
         if run_analysis:
             torch.manual_seed(self.seed)
 
             self.feature_vectors = feature_vectors(**self._kw4)
-            self.deembeddings = deembeddings(**self._kw4)
+            # self.deembeddings = deembeddings(**self._kw4)
 
     def _clean(self, component: str):
         # Wipe path-level attributes
