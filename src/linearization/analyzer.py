@@ -146,7 +146,14 @@ class SAELinearizer:
         if run_analysis:
             torch.manual_seed(self.seed)
             # self.attributions = attributions(**self._kw3)
-            self.attributions = attributions(self.model, self.feature_vector, self.example, self.token_idx, self.layer)
+            self.attributions = attributions(
+                self.model,
+                self.feature_vector,
+                self.example,
+                self.token_idx,
+                self.layer,
+                mlp_out=self.act_name == "mlp_out",
+            )
 
         # Unset downstream values
         self._clean("example")

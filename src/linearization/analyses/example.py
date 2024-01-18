@@ -1,4 +1,6 @@
 import torch
+import transformer_lens
+from typing import Dict
 
 from ..layers import get_tangent_plane_at_point, ln2_mlp_until_out, ln2_mlp_until_post
 
@@ -6,6 +8,9 @@ from transformer_lens import utils
 
 
 def _validate_cache(cache, data, model, layer):
+    """
+    Helper function: validate cache and data
+    """
     # Get cache
     if cache is None:
         if data is not None:
@@ -20,6 +25,9 @@ def _validate_cache(cache, data, model, layer):
 
 
 def _get_attn_head_contribs(model, layer, range_normal, cache=None, data=None):
+    """
+    Helper function: get attention head contributions for a layer, prompt
+    """
     cache = _validate_cache(cache, data, model, layer)
     split_vals = cache[utils.get_act_name("v", layer)]
     attn_pattern = cache[utils.get_act_name("pattern", layer)]
@@ -41,6 +49,9 @@ def _get_attn_head_contribs(model, layer, range_normal, cache=None, data=None):
 
 
 def _get_attn_head_contribs_ov(model, layer, range_normal, cache=None, data=None):
+    """
+    Helper fucntion: get OV-circuit attention head contributions for a layer, prompt
+    """
     cache = _validate_cache(cache, data, model, layer)
     split_vals = cache[utils.get_act_name("v", layer)]
 
@@ -52,42 +63,46 @@ def _get_attn_head_contribs_ov(model, layer, range_normal, cache=None, data=None
 
     return contribs
 
-# def _get_feature_mid(
-#     model, example, feature_token_idx, feature_post, use_ln=True, layer=0, mlp_out=True
-# ):
-#     with torch.no_grad():
-#         _, cache = model.run_with_cache(
-#             example, names_filter=[utils.get_act_name("resid_mid", layer)]
-#         )
-#     mid_acts = cache[utils.get_act_name("resid_mid", layer)]
-#     x_mid = mid_acts[0, feature_token_idx][None, None, :]
 
-#     my_fun = ln2_mlp_until_post if not mlp_out else ln2_mlp_until_out
-#     feature_mid = get_tangent_plane_at_point(
-#         x_mid, lambda x: my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=use_ln), feature_post
-#     )[0, 0]
-#     return feature_mid
+def attributions(
+    model: transformer_lens.HookedTransformer,
+    feature_vector: torch.Tensor,
+    example: torch.Tensor,
+    token_idx: int,
+    layer: int,
+    use_ln: bool = False,
+    mlp_out: bool = True,
+) -> Dict[str, torch.Tensor]:
+    """
+    Given an example tensor, return attention head and OV-circuit attributions for that prompt.
 
+    Args:
+        model: HookedTransformer model
+        feature_vector: Feature vector for linearization, shape (d_model,)
+        example: Example tensor, shape (seq_len,)
+        token_idx: Index of token to linearize
+        layer: Layer to linearize
+        use_ln: Whether to use layer normalization
+        mlp_out: Whether to use MLP outputs or activations
 
-def attributions(model, feature_vector, example, token_idx, layer, use_ln=True, mlp_out=True):
+    Returns:
+        A dict of attention head and OV-circuit attributions:
+        {
+            "attn": shape (n_heads, seq_len, seq_len)
+            "ov": shape (n_heads, seq_len)
+        }
+    """
     # Get cache
     _, cache = model.run_with_cache(
-        example,
-        names_filter=[
-            # utils.get_act_name("post", layer),
-            utils.get_act_name("resid_mid", layer),
-            utils.get_act_name("attn_scores", layer),
-        ],
+        example, names_filter=[utils.get_act_name("resid_mid", layer), utils.get_act_name("attn_scores", layer)]
     )
-    # mlp_acts_flattened = cache[utils.get_act_name("post", lin.layer)].reshape(-1, SAE_CFG["d_mlp"])
-    # _, _, hidden_acts, _, _ = lin.sae(mlp_acts_flattened)
 
     # Linearization component
     mid_acts = cache[utils.get_act_name("resid_mid", layer)]
     x_mid = mid_acts[0, token_idx][None, None, :]
     my_fun = ln2_mlp_until_out if mlp_out else ln2_mlp_until_post
     feature_mid = get_tangent_plane_at_point(
-        x_mid, lambda x: my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=False), feature_vector
+        x_mid, lambda x: my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=use_ln), feature_vector
     )[0, 0]
     attn_contribs = torch.cat(
         [_get_attn_head_contribs(model, l, range_normal=feature_mid, data=example) for l in range(layer + 1)],
@@ -97,4 +112,4 @@ def attributions(model, feature_vector, example, token_idx, layer, use_ln=True, 
         [_get_attn_head_contribs_ov(model, l, range_normal=feature_mid, data=example) for l in range(layer + 1)],
         dim=0,
     )
-    return {"attn": attn_contribs, "ov": ov_contribs}
+    return {"attn": attn_contribs.detach().cpu().squeeze(), "ov": ov_contribs.detach().cpu().squeeze()}

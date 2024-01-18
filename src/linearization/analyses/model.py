@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Dict, List
 
 # from scipy.sparse import csr_matrix
-from transformer_lens import HookedTransformer
+import transformer_lens
 from transformer_lens.utils import get_act_name
 
 from ..sae_tutorial import get_freqs, AutoEncoder
@@ -13,7 +13,7 @@ from ..vars import SAE_CFG
 
 
 def frequencies(
-    model: HookedTransformer,
+    model: transformer_lens.HookedTransformer,
     sae: AutoEncoder,
     data: torch.Tensor,
     layer: int,
@@ -43,7 +43,7 @@ def frequencies(
 
 
 def f1_scores(
-    model: HookedTransformer,
+    model: transformer_lens.HookedTransformer,
     sae: AutoEncoder,
     data: torch.Tensor,
     layer: int,

@@ -1,6 +1,6 @@
 import torch
 
-from transformer_lens import HookedTransformer
+import transformer_lens
 from transformer_lens.utils import get_act_name
 
 from typing import Dict
@@ -37,7 +37,7 @@ def _get_sample(model, sae, data, feature_idx, layer, act_name, num_batches):
 
 
 def top_activating_examples(
-    model: HookedTransformer,
+    model: transformer_lens.HookedTransformer,
     sae: AutoEncoder,
     data: torch.Tensor,
     feature_idx: int,
@@ -72,7 +72,13 @@ def top_activating_examples(
         rank: Whether to return uniformly spaced examples by rank.
 
     Returns:
-        A dict of top activating examples, activations, and their row and column indices.
+        A dict of top activating examples, activations, and their row and column indices:
+        {
+            "examples": shape (num_examples, n_tokens)
+            "activations": shape (num_examples, n_tokens)
+            "rows": shape (num_examples,)
+            "cols": shape (num_examples,)
+        }
     """
     activations, tokens = _get_sample(model, sae, data, feature_idx, layer, act_name, num_batches)
 
@@ -97,7 +103,16 @@ def top_activating_examples(
     return {"examples": tokens[r], "activations": activations[r], "rows": r, "cols": c}
 
 
-def top_logit_tokens(model, sae, feature_idx, layer, act_name, num_examples=10, reverse=False, **absorb):
+def top_logit_tokens(
+    model: transformer_lens.HookedTransformer,
+    sae: AutoEncoder,
+    feature_idx: int,
+    layer: int,
+    act_name: str,
+    num_examples: int = 10,
+    reverse: bool = False,
+    **absorb
+) -> Dict[str, torch.Tensor]:
     """
     Given an SAE feature index, return top activating tokens based on decoder logit scores.
 
@@ -110,7 +125,11 @@ def top_logit_tokens(model, sae, feature_idx, layer, act_name, num_examples=10, 
         mlp_out: Whether to use the SAE's MLP output layer instead of the MLP activations (resid_mid).
 
     Returns:
-        A dict of top activating tokens and their logit scores.
+        A dict of top activating tokens and their logit scores:
+        {
+            "tokens": shape (num_examples,)
+            "logits": shape (num_examples,)
+        }
     """
     feature_resid = sae.W_enc[:, feature_idx]
     feature_resid = feature_resid @ model.blocks[layer].mlp.W_out if act_name != "mlp_out" else feature_resid

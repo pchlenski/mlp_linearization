@@ -1,7 +1,39 @@
+import transformer_lens
+import torch
+
+from transformer_lens import utils
+from Typing import List, Tuple, Dict
+
 from ..layers import ln2_mlp_until_out, ln2_mlp_until_post, get_tangent_plane_at_point
 
 
-def feature_vectors(model, data, sae, feature_idx, example, token_idx, start_vector, path, act_name, layer):
+def feature_vectors(
+    model: transformer_lens.HookedTransformer,
+    example: torch.Tensor,
+    token_idx: int,
+    start_vector: torch.Tensor,
+    path: List[Tuple],
+    mlp_out: bool,
+    **absorb
+) -> Dict[str, List[torch.Tensor]]:
+    """
+    Given a path and an example, get feature vectors and de-embeddings after pulling back through each path component.
+
+    Args:
+        model: HookedTransformer model
+        example: Example tensor, shape (seq_len,)
+        token_idx: Index of token to linearize
+        start_vector: Feature vector for linearization, shape (d_model,)
+        path: Path to pull back through, a list of tuples of the form (component_name, layer, head)
+        mlp_out: Whether to use MLP outputs or activations
+
+    Returns:
+        A dict of feature vectors and de-embeddings:
+        {
+            "feature_vectors": (n_components + 1)-length list of (d_model,) tensors
+            "deembeddings": (n_components + 1)-length list of (vocab_size,) tensors
+        }
+    """
     vecs = [start_vector]  # Always do direct path
 
     # Get cache
