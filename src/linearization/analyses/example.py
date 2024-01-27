@@ -72,6 +72,7 @@ def attributions(
     layer: int,
     use_ln: bool = False,
     mlp_out: bool = True,
+    **absorb,
 ) -> Dict[str, torch.Tensor]:
     """
     Given an example tensor, return attention head and OV-circuit attributions for that prompt.

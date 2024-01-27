@@ -86,11 +86,13 @@ class SAELinearizer:
         self.sae = self.saes[sae_name]
         self.layer = self.sae_layers[sae_name]
         self.feature_idx = feature_idx
-        # if self.act_name == "mlp_out":
-        #     self.feature_vector = self.sae.W_enc[:, feature_idx]
-        # elif self.act_name == "post":
-        #     self.feature_vector = self.sae.W_enc[:, feature_idx] @ self.model.blocks[self.layer].mlp.W_out
-        self.feature_vector = self.sae.W_enc[:, feature_idx]
+        if self.act_name == "mlp_out":
+            self.feature_vector = self.sae.W_enc[:, feature_idx]
+            self.range_normal = self.feature_vector  # I think
+        elif self.act_name == "post":
+            self.feature_vector = self.sae.W_enc[:, feature_idx]
+            self.range_normal = self.feature_vector @ self.model.blocks[self.layer].mlp.W_out
+        # self.feature_vector = self.sae.W_enc[:, feature_idx]
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx, "layer": self.layer}
 
         # Run analysis
@@ -112,7 +114,7 @@ class SAELinearizer:
         # Unset downstream values
         self._clean("feature")
 
-    def set_example(self, example: Union[str, int], token_idx: int, run_analysis=True):
+    def set_example(self, example: Union[str, int], token_idx: int, use_ln: bool = False, run_analysis=True):
         # Turn prompt or index into equivalent tensors
         if isinstance(example, str):
             example = self.model.tokenizer.encode(example)
@@ -140,21 +142,28 @@ class SAELinearizer:
         # Set example and token index
         self.example = example
         self.token_idx = token_idx
+        self.use_ln = use_ln
         print(f"Token: {self.model.tokenizer.decode(self.example[self.token_idx])}")  # Sanity check token idx
-        self._kw3 = {**self._kw2, "example": self.example, "token_idx": self.token_idx}
+        self._kw3 = {
+            **self._kw2,
+            "example": self.example,
+            "token_idx": self.token_idx,
+            "mlp_out": self.act_name == "mlp_out",
+            "use_ln": self.use_ln,
+        }
 
         # Run analysis
         if run_analysis:
             torch.manual_seed(self.seed)
-            # self.attributions = attributions(**self._kw3)
-            self.attributions = attributions(
-                self.model,
-                self.feature_vector,
-                self.example,
-                self.token_idx,
-                self.layer,
-                mlp_out=self.act_name == "mlp_out",
-            )
+            self.attributions = attributions(**self._kw3, feature_vector=self.feature_vector)
+            # self.attributions = attributions(
+            #     self.model,
+            #     self.feature_vector,
+            #     self.example,
+            #     self.token_idx,
+            #     self.layer,
+            #     mlp_out=self.act_name == "mlp_out",
+            # )
 
         # Unset downstream values
         self._clean("example")
@@ -177,7 +186,7 @@ class SAELinearizer:
 
         # Set attributes
         self.path = path_names_fixed
-        self._kw4 = {**self._kw3, "start_vector": self.feature_vector, "path": self.path}
+        self._kw4 = {**self._kw3, "start_vector": self.range_normal, "path": self.path}
 
         # Run analysis
         if run_analysis:

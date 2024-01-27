@@ -42,6 +42,7 @@ def feature_vectors(
 
     while path:
         component = path.pop(0)
+        print("Last vector length:", vecs[-1].shape)
         if component[0] == "attention":
             vecs.append(vecs[-1] @ model.OV[component[1]][component[2]])
         elif component[0] == "mlp":
