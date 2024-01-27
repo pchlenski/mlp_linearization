@@ -106,7 +106,8 @@ def top_activating_examples(
 def top_logit_tokens(
     model: transformer_lens.HookedTransformer,
     sae: AutoEncoder,
-    feature_idx: int,
+    # feature_idx: int,
+    range_normal: torch.Tensor,
     layer: int,
     act_name: str,
     num_examples: int = 10,
@@ -131,9 +132,10 @@ def top_logit_tokens(
             "logits": shape (num_examples,)
         }
     """
-    feature_resid = sae.W_enc[:, feature_idx]
-    feature_resid = feature_resid @ model.blocks[layer].mlp.W_out if act_name != "mlp_out" else feature_resid
-    logit_unembed = feature_resid @ model.W_U
+    # feature_resid = sae.W_enc[:, feature_idx]
+    # feature_resid = feature_resid @ model.blocks[layer].mlp.W_out if act_name != "mlp_out" else feature_resid
+    # logit_unembed = feature_resid @ model.W_U
+    logit_unembed = range_normal @ model.W_U
     logit_unembed = logit_unembed.flatten()
 
     idx = torch.topk(logit_unembed.flatten(), num_examples, dim=0, largest=not reverse).indices

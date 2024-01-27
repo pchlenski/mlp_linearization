@@ -1,10 +1,38 @@
 import torch
 import transformer_lens
 from typing import Dict
-
+from ..sae_tutorial import AutoEncoder
 from ..layers import get_tangent_plane_at_point, ln2_mlp_until_out, ln2_mlp_until_post
 
 from transformer_lens import utils
+
+
+def example_scores(
+    model: transformer_lens.HookedTransformer,
+    sae: AutoEncoder,
+    act_name: str,
+    layer: int,
+    example: torch.Tensor,
+    feature_idx: int,
+    **absorb,
+) -> Dict[str, torch.Tensor]:
+    """
+    Given an example tensor, return SAE feature scores for each token in that example.
+
+    Args:
+        model: HookedTransformer model
+        example: Example tensor, shape (seq_len,)
+
+    Returns:
+        A Tensor of SAE feature scores, shape (seq_len,)
+    """
+
+    # Get cache
+    _, cache = model.run_with_cache(example, names_filter=[utils.get_act_name(act_name, layer)])
+    mlp_acts = cache[utils.get_act_name(act_name, layer)]
+    hidden = sae(mlp_acts)[2]
+
+    return hidden[:, :, feature_idx]
 
 
 def _validate_cache(cache, data, model, layer):

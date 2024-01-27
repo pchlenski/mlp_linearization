@@ -7,7 +7,7 @@ from .vars import MODEL, RUN, DATASET
 
 from .analyses.model import frequencies, f1_scores
 from .analyses.feature import top_activating_examples, top_logit_tokens
-from .analyses.example import attributions
+from .analyses.example import example_scores, attributions
 from .analyses.path import feature_vectors
 
 
@@ -108,8 +108,8 @@ class SAELinearizer:
             )
 
             # Logit level
-            self.top_logit_tokens = top_logit_tokens(**self._kw2)
-            self.bottom_logit_tokens = top_logit_tokens(**self._kw2, reverse=True)
+            self.top_logit_tokens = top_logit_tokens(**self._kw2, range_normal=self.range_normal)
+            self.bottom_logit_tokens = top_logit_tokens(**self._kw2, range_normal=self.range_normal, reverse=True)
 
         # Unset downstream values
         self._clean("feature")
@@ -155,15 +155,8 @@ class SAELinearizer:
         # Run analysis
         if run_analysis:
             torch.manual_seed(self.seed)
+            self.example_scores = example_scores(**self._kw3)
             self.attributions = attributions(**self._kw3, feature_vector=self.feature_vector)
-            # self.attributions = attributions(
-            #     self.model,
-            #     self.feature_vector,
-            #     self.example,
-            #     self.token_idx,
-            #     self.layer,
-            #     mlp_out=self.act_name == "mlp_out",
-            # )
 
         # Unset downstream values
         self._clean("example")
