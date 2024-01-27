@@ -86,10 +86,11 @@ class SAELinearizer:
         self.sae = self.saes[sae_name]
         self.layer = self.sae_layers[sae_name]
         self.feature_idx = feature_idx
-        if self.act_name == "mlp_out":
-            self.feature_vector = self.sae.W_enc[:, feature_idx]
-        elif self.act_name == "post":
-            self.feature_vector = self.sae.W_enc[:, feature_idx] @ self.model.blocks[self.layer].mlp.W_out
+        # if self.act_name == "mlp_out":
+        #     self.feature_vector = self.sae.W_enc[:, feature_idx]
+        # elif self.act_name == "post":
+        #     self.feature_vector = self.sae.W_enc[:, feature_idx] @ self.model.blocks[self.layer].mlp.W_out
+        self.feature_vector = self.sae.W_enc[:, feature_idx]
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx, "layer": self.layer}
 
         # Run analysis

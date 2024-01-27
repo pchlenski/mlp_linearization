@@ -2,7 +2,7 @@ import transformer_lens
 import torch
 
 from transformer_lens import utils
-from Typing import List, Tuple, Dict
+from typing import List, Tuple, Dict
 
 from ..layers import ln2_mlp_until_out, ln2_mlp_until_post, get_tangent_plane_at_point
 

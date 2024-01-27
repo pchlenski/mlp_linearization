@@ -92,16 +92,20 @@ def f1_scores(
     precisions = []
     recalls = []
     f1_scores = []
+    top_tokens = []
     for feature_counter in feature_counters:
-        try:
-            top_token, top_token_count = feature_counter.most_common(1)[0]
+        # try:
+        if feature_counter:
+            top_token_id, top_token_count = feature_counter.most_common(1)[0]
+            top_token = model.tokenizer.decode(top_token_id)
             precision = top_token_count / sum(feature_counter.values())
-            recall = top_token_count / token_counter[top_token]
+            recall = top_token_count / token_counter[top_token_id]
             f1 = 2 * precision * recall / (precision + recall)
-        except IndexError:  # For dead and low-frequency features
-            precision, recall, f1 = 0, 0, 0
+        else:
+            precision, recall, f1, top_token = 0, 0, 0, None
         precisions.append(precision)
         recalls.append(recall)
         f1_scores.append(f1)
+        top_tokens.append(top_token)
 
-    return {"precisions": precisions, "recalls": recalls, "f1_scores": f1_scores}
+    return {"precisions": precisions, "recalls": recalls, "f1_scores": f1_scores, "top_tokens": top_tokens}
