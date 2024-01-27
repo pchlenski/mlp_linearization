@@ -7,7 +7,7 @@ from .vars import MODEL, RUN, DATASET
 
 from .analyses.model import frequencies, f1_scores
 from .analyses.feature import top_activating_examples, top_logit_tokens
-from .analyses.example import example_scores, attributions
+from .analyses.example import example_scores, attributions, get_feature_mid
 from .analyses.path import feature_vectors
 
 
@@ -156,7 +156,8 @@ class SAELinearizer:
         if run_analysis:
             torch.manual_seed(self.seed)
             self.example_scores = example_scores(**self._kw3)
-            self.attributions = attributions(**self._kw3, feature_vector=self.feature_vector)
+            self.feature_mid = get_feature_mid(**self._kw3, feature_vector=self.feature_vector)
+            self.attributions = attributions(**self._kw3, feature_mid=self.feature_mid)
 
         # Unset downstream values
         self._clean("example")

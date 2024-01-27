@@ -35,6 +35,22 @@ def example_scores(
     return hidden[:, :, feature_idx]
 
 
+def get_feature_mid(model, example, token_idx, feature_vector, layer, use_ln, mlp_out, **absorb):
+    # Get cache
+    with torch.no_grad():
+        _, cache = model.run_with_cache(example, names_filter=[utils.get_act_name("resid_mid", layer)])
+
+    # Linearization component
+    mid_acts = cache[utils.get_act_name("resid_mid", layer)]
+    x_mid = mid_acts[0, token_idx][None, None, :]
+    my_fun = ln2_mlp_until_out if mlp_out else ln2_mlp_until_post
+    feature_mid = get_tangent_plane_at_point(
+        x_mid, lambda x: my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=use_ln), feature_vector
+    )[0, 0]
+
+    return feature_mid
+
+
 def _validate_cache(cache, data, model, layer):
     """
     Helper function: validate cache and data
@@ -94,12 +110,13 @@ def _get_attn_head_contribs_ov(model, layer, range_normal, cache=None, data=None
 
 def attributions(
     model: transformer_lens.HookedTransformer,
-    feature_vector: torch.Tensor,
+    feature_mid: torch.Tensor,
+    # feature_vector: torch.Tensor,
     example: torch.Tensor,
-    token_idx: int,
+    # token_idx: int,
     layer: int,
-    use_ln: bool = False,
-    mlp_out: bool = True,
+    # use_ln: bool = False,
+    # mlp_out: bool = True,
     **absorb,
 ) -> Dict[str, torch.Tensor]:
     """
@@ -121,18 +138,6 @@ def attributions(
             "ov": shape (n_heads, seq_len)
         }
     """
-    # Get cache
-    _, cache = model.run_with_cache(
-        example, names_filter=[utils.get_act_name("resid_mid", layer), utils.get_act_name("attn_scores", layer)]
-    )
-
-    # Linearization component
-    mid_acts = cache[utils.get_act_name("resid_mid", layer)]
-    x_mid = mid_acts[0, token_idx][None, None, :]
-    my_fun = ln2_mlp_until_out if mlp_out else ln2_mlp_until_post
-    feature_mid = get_tangent_plane_at_point(
-        x_mid, lambda x: my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=use_ln), feature_vector
-    )[0, 0]
     attn_contribs = torch.cat(
         [_get_attn_head_contribs(model, l, range_normal=feature_mid, data=example) for l in range(layer + 1)],
         dim=0,

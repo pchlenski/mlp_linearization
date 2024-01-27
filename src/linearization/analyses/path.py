@@ -14,6 +14,8 @@ def feature_vectors(
     start_vector: torch.Tensor,
     path: List[Tuple],
     mlp_out: bool,
+    act_name: str,
+    layer: int,
     **absorb
 ) -> Dict[str, List[torch.Tensor]]:
     """
@@ -34,12 +36,25 @@ def feature_vectors(
             "deembeddings": (n_components + 1)-length list of (vocab_size,) tensors
         }
     """
-    vecs = [start_vector]  # Always do direct path
 
     # Get cache
-    layers = [component[1] for component in path if component[0] == "mlp"]
-    _, cache = model.run_with_cache(example, names_filter=[utils.get_act_name("resid_mid", layer) for layer in layers])
+    layers = [component[1] for component in path]
+    _, cache = model.run_with_cache(
+        example,
+        names_filter=[utils.get_act_name(act_name, l) for l in layers]
+        + [utils.get_act_name("attn_scores", l) for l in layers]
+        + [utils.get_act_name(act_name, layer)],
+    )  # TODO: fix this up to remove redundancy
+    my_fun = ln2_mlp_until_out if mlp_out else ln2_mlp_until_post
 
+    # Always do direct path
+    x = cache[utils.get_act_name(act_name, layer)][0, token_idx][None, None, :]
+    feature_mid = get_tangent_plane_at_point(
+        x, my_fun(x, model.blocks[layer].ln2, model.blocks[layer].mlp, use_ln=False), start_vector
+    )[0, 0]
+    vecs = [feature_mid]
+
+    # Also anything else in the path
     while path:
         component = path.pop(0)
         if component[0] == "attention":
@@ -47,7 +62,6 @@ def feature_vectors(
         elif component[0] == "mlp":
             mid_acts = cache[utils.get_act_name("resid_mid", component[1])]
             x_mid = mid_acts[0, token_idx][None, None, :]
-            my_fun = ln2_mlp_until_out if mlp_out else ln2_mlp_until_post
             vecs.append(
                 get_tangent_plane_at_point(
                     x_mid,
