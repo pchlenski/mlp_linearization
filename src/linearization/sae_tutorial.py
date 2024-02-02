@@ -6,6 +6,7 @@ https://colab.research.google.com/drive/1u8larhpxy8w4mMsJiSBddNOzFGj7_RTn?usp=sh
 
 import pprint
 import tqdm
+import json
 
 import numpy as np
 import pandas as pd
@@ -16,7 +17,7 @@ import torch.nn.functional as F
 
 import colorsys
 from html import escape
-from IPython.display import display
+from IPython.display import display, HTML
 import gradio as gr
 
 from transformer_lens import utils
@@ -24,6 +25,7 @@ from transformer_lens import utils
 from functools import partial
 
 from .vars import DTYPES, SPACE, NEWLINE, TAB, SAE_CFG
+from .pythia import TiedSAE
 
 cfg = SAE_CFG
 
@@ -82,13 +84,17 @@ class AutoEncoder(nn.Module):
     #     return self
 
     @classmethod
-    def load(cls, version):
+    def load(cls, version, use_gpt=False):
         if version in ["run1", "run2", "l0", "l1"]:
             return cls.load_from_hf(version)
         elif isinstance(version, int):
-            return cls.load_gpt2(version)
+            if use_gpt:
+                return cls.load_gpt2(version)
+            else:
+                return cls.load_pythia(version)
         else:
-            raise ValueError(f"Unknown version {version}")
+            # raise ValueError(f"Unknown version {version}")
+            return cls.load_pythia_smarks(version)
 
     @classmethod
     def load_from_hf(cls, version):
@@ -147,6 +153,56 @@ class AutoEncoder(nn.Module):
         self.load_state_dict(new_state_dict)
         return self
 
+    @classmethod
+    def load_pythia(cls, version):
+        print(f"Loading Pythia-70M layer {version} from HF")
+
+        # TODO: determine the actual L1 coefficient
+        cfg = {"d_mlp": 512, "dict_mult": 4, "l1_coeff": 0.01, "enc_dtype": "fp32", "seed": 42}
+        self = cls(cfg=cfg)
+
+        pythia_sae = utils.download_file_from_hf(
+            f"Elriggs/pythia-70M-deduped-sae",
+            f"pythia-70m-deduped_r4_gpt_neox.layers.{version}.pt",
+            force_is_torch=True,
+        )
+
+        state_dict = {
+            "W_enc": pythia_sae._parameters["encoder"].T,
+            "b_enc": pythia_sae._parameters["encoder_bias"],
+            "W_dec": pythia_sae._parameters["encoder"],  # Tied weights
+            "b_dec": torch.zeros(512),  # TODO: verify
+        }
+
+        self.load_state_dict(state_dict)
+        return self
+
+    @classmethod
+    def load_pythia_smarks(cls, version):
+        # Version should be e.g. "0/0_8192"
+
+        # Get cfg
+        path = f"/home/phil/mlp_linearization/data/pythia_sae/pythia-70m-deduped/mlp_out_layer{version}"
+        cfg_path = f"{path}/config.json"
+        cfg = json.load(open(cfg_path, "r"))
+        cfg["d_mlp"] = cfg["activation_dim"]
+        cfg["dict_mult"] = int(cfg["dictionary_size"] / cfg["activation_dim"])
+        cfg["l1_coeff"] = cfg["sparsity_penalty"]
+        cfg["enc_dtype"] = "fp32"
+        cfg["seed"] = 42
+        self = cls(cfg=cfg)
+
+        # Get state dict
+        pythia_sae = torch.load(f"{path}/ae.pt")
+        state_dict = {
+            "W_enc": pythia_sae["encoder.weight"].T,
+            "b_enc": pythia_sae["encoder.bias"],
+            "W_dec": pythia_sae["encoder.weight"],
+            "b_dec": pythia_sae["bias"],
+        }
+        self.load_state_dict(state_dict)
+        return self
+
 
 # Utils:
 # Get reconstruction loss
@@ -169,8 +225,7 @@ def zero_ablate_hook(mlp_post, hook):
 
 @torch.no_grad()
 def get_recons_loss(all_tokens, model, num_batches=5, local_encoder=None):
-    if local_encoder is None:
-        local_encoder = encoder
+    print("get_recons_loss")
     loss_list = []
     for i in range(num_batches):
         tokens = all_tokens[torch.randperm(len(all_tokens))[: cfg["model_batch_size"]]]
@@ -198,14 +253,14 @@ def get_recons_loss(all_tokens, model, num_batches=5, local_encoder=None):
 # Get frequency
 @torch.no_grad()
 def get_freqs(all_tokens, model, act_name="post", layer=0, num_batches=25, local_encoder=None):
-    if local_encoder is None:
-        local_encoder = encoder
     act_freq_scores = torch.zeros(local_encoder.d_hidden, dtype=torch.float32).cuda()
     total = 0
     for i in tqdm.trange(num_batches):
         tokens = all_tokens[torch.randperm(len(all_tokens))[: cfg["model_batch_size"]]]
 
-        _, cache = model.run_with_cache(tokens, names_filter=utils.get_act_name(act_name, layer))
+        _, cache = model.run_with_cache(
+            tokens, names_filter=utils.get_act_name(act_name, layer), stop_at_layer=layer + 1
+        )
         mlp_acts = cache[utils.get_act_name(act_name, layer)]
         mlp_acts = mlp_acts.reshape(-1, local_encoder.W_enc.shape[0])
 
@@ -304,8 +359,6 @@ def basic_token_vis_make_str(strings, values, model, max_val=None):
 
 
 def make_feature_vis_gradio(feature_id, encoder, model, starting_text=None, batch=None, pos=None):
-    if starting_text is None:
-        starting_text = model.to_string(all_tokens[batch, 1 : pos + 1])
     try:
         demos[0].close()
     except:

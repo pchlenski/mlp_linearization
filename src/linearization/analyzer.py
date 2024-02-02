@@ -60,6 +60,7 @@ class SAELinearizer:
 
         # Run analysis
         if run_analysis:
+            print(self.saes.keys())
             torch.manual_seed(self.seed)
             self.frequencies = {
                 name: frequencies(
