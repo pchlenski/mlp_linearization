@@ -7,6 +7,11 @@ from transformer_lens.utils import tokenize_and_concatenate
 from .sae_tutorial import AutoEncoder
 from .vars import MODEL, RUN, DATASET
 
+# Add sae_training module
+import sys
+
+sys.path.append("/home/phil/mats_sae_training")
+
 
 def load_model(
     model_name: str = MODEL,
@@ -47,9 +52,9 @@ def load_data(
 
 
 def load_sae(
-    run_id: str = RUN, use_cuda: bool = True, half_precision: bool = True, verbose: bool = True, **kwargs
+    run_id: str = RUN, use_cuda: bool = True, half_precision: bool = True, verbose: bool = True, use_gpt=True, **kwargs
 ) -> AutoEncoder:
-    encoder = AutoEncoder.load(run_id)
+    encoder = AutoEncoder.load(run_id, use_gpt=use_gpt, **kwargs)
     encoder = encoder.cuda() if use_cuda else encoder
     encoder = encoder.to(torch.float16) if half_precision else encoder
     print(f"Encoder device: {next(encoder.parameters()).device}") if verbose else None
