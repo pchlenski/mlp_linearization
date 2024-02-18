@@ -74,8 +74,9 @@ def f1_scores(
         for i in tqdm.trange(num_batches):
             tokens = data[torch.randperm(len(data))[: SAE_CFG["model_batch_size"]]]
 
-            _, cache = model.run_with_cache(tokens, names_filter=get_act_name(act_name, layer))
-            mlp_acts = cache[get_act_name(act_name, layer)]
+            layer_name = "ln2" if act_name == "normalized" else None
+            _, cache = model.run_with_cache(tokens, names_filter=get_act_name(act_name, layer, layer_name))
+            mlp_acts = cache[get_act_name(act_name, layer, layer_name)]
 
             hidden = sae(mlp_acts)[2]
             for j in range(sae.W_enc.shape[1]):

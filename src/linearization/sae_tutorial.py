@@ -33,7 +33,9 @@ cfg = SAE_CFG
 # Add sae_training module
 import sys
 
+# For unpickling
 sys.path.append("/home/phil/mats_sae_training")
+sys.path.append("/home/phil/transcoders")
 
 
 class AutoEncoder(nn.Module):
@@ -95,14 +97,14 @@ class AutoEncoder(nn.Module):
             return cls.load_from_hf(version)
         elif isinstance(version, int):
             if use_gpt:
-                return cls.load_gpt2(version, **gpt_kwargs)
+                return cls.load_from_path(version, **gpt_kwargs)
             else:
                 return cls.load_pythia(version)
         else:
             # raise ValueError(f"Unknown version {version}")
             # return cls.load_pythia_smarks(version)
             # return cls.load_path(version)
-            return cls.load_gpt2(version)  # Path case
+            return cls.load_from_path(version)  # Path case
 
     @classmethod
     def load_from_hf(cls, version):
@@ -135,52 +137,26 @@ class AutoEncoder(nn.Module):
         return self
 
     @classmethod
-    def load_gpt2(cls, version, dict_mult=None, hook_point=None):
+    def load_from_path(cls, version):
         # Integer version = gpt2-small layers
-        print(f"Loading GPT2-small layer {version} from disk")
-        # cfg = {"d_mlp": 3072, "dict_mult": 10.6667, "l1_coeff": 0.01, "enc_dtype": "fp32", "seed": 42}
-        # cfg = {"d_mlp": 3072, "dict_mult": dict_mult, "l1_coeff": 0.00008, "enc_dtype": "fp32", "seed": 42}
-        # self = cls(cfg=cfg)
+        print(f"Loading {version} from disk")
 
-        # Find path - the SAE names can have some random numbers in them
-        # sae_dir = f"/home/phil/mlp_linearization/scripts/checkpoints/{dict_mult}x_{hook_point}/layer{version}"
-        # with os.scandir(sae_dir) as it:
-        #     for entry in it:
-        #         if entry.name.startswith("final") and not entry.name.endswith("sparsity.pt"):
-        #             filename = entry.path
-        #             break
-        #     if not filename:
-        #         raise FileNotFoundError(f"Could not find a final checkpoint in {sae_dir}")
-
-        # print(f"Loading from path: {os.path.join(sae_dir, filename)}")
-        # original_state_dict = torch.load(f"{os.path.join(sae_dir, filename)}")
-
-        # # Define a mapping from the original keys to the keys expected by your model
-        # key_map = {
-        #     "pre_bias": "b_dec",
-        #     "latent_bias": "b_enc",
-        #     "decoder.weight": "W_dec",
-        #     "encoder.weight": "W_enc",
-        # }
-
-        # # Map the keys
-        # new_state_dict = {key_map.get(k, k): v for k, v in original_state_dict.items()}
-        # new_state_dict["W_dec"] = new_state_dict["W_dec"].T
-        # new_state_dict["W_enc"] = new_state_dict["W_enc"].T
-        # new_state_dict.pop("stats_last_nonzero")
-
+        # Make a new state dict with the correct keys
         loaded = torch.load(version)
         sae_cfg = loaded["cfg"]
         cfg = {
-            "d_mlp": sae_cfg.d_in, #"mlp" as catch-all for encoded dimension
+            "d_mlp": sae_cfg.d_in,  # "mlp" as catch-all for encoded dimension
             "dict_mult": sae_cfg.expansion_factor,
             "l1_coeff": sae_cfg.l1_coefficient,
             "enc_dtype": "fp32",
             "seed": sae_cfg.seed,
         }
-
         state_dict = loaded["state_dict"]
         self = cls(cfg=cfg)
+
+        # A little transcoder fix - we don't need this unless we actually substitute decoder outputs in the model
+        if "b_dec_out" in state_dict:
+            state_dict.pop("b_dec_out")
 
         # Load the new state_dict into your model
         self.load_state_dict(state_dict)
@@ -291,10 +267,11 @@ def get_freqs(all_tokens, model, act_name="post", layer=0, num_batches=25, local
     for i in tqdm.trange(num_batches):
         tokens = all_tokens[torch.randperm(len(all_tokens))[: cfg["model_batch_size"]]]
 
+        layer_type = "ln2" if act_name == "normalized" else None
         _, cache = model.run_with_cache(
-            tokens, names_filter=utils.get_act_name(act_name, layer), stop_at_layer=layer + 1
+            tokens, names_filter=utils.get_act_name(act_name, layer, layer_type), stop_at_layer=layer + 1
         )
-        mlp_acts = cache[utils.get_act_name(act_name, layer)]
+        mlp_acts = cache[utils.get_act_name(act_name, layer, layer_type)]
         mlp_acts = mlp_acts.reshape(-1, local_encoder.W_enc.shape[0])
 
         hidden = local_encoder(mlp_acts)[2]

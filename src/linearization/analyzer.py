@@ -49,6 +49,12 @@ class SAELinearizer:
         num_batches=25,
         **kwargs,
     ):
+        # Input validation
+        if len(sae_names) != len(layers):
+            raise ValueError("SAE names and layers must be the same length")
+        if not all([isinstance(layer, int) for layer in layers]):
+            raise ValueError("Layers must be integers")
+
         # Load model, data, and SAE(s)
         self.model = load_model(model_name, **kwargs).to(self.device)
         self.data = load_data(self.model, dataset_name, **kwargs).to(self.device)

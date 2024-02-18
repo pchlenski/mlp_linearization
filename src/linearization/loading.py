@@ -10,7 +10,10 @@ from .vars import MODEL, RUN, DATASET
 # Add sae_training module
 import sys
 
-sys.path.append("/home/phil/mats_sae_training")
+# # sys.path.append("/home/phil/mats_sae_training")
+sys.path.append("/home/phil/transcoders")
+
+# from sae_training.sparse_autoencoder import SparseAutoencoder as Transcoder
 
 
 def load_model(
@@ -52,8 +55,17 @@ def load_data(
 
 
 def load_sae(
-    run_id: str = RUN, use_cuda: bool = True, half_precision: bool = True, verbose: bool = True, use_gpt=True, **kwargs
+    run_id: str = RUN,
+    use_cuda: bool = True,
+    half_precision: bool = True,
+    verbose: bool = True,
+    use_gpt=True,
+    transcoder=False,
+    **kwargs,
 ) -> AutoEncoder:
+    # if transcoder:
+    #     encoder = Transcoder.load_from_pretrained(run_id)
+    # else:
     encoder = AutoEncoder.load(run_id, use_gpt=use_gpt, **kwargs)
     encoder = encoder.cuda() if use_cuda else encoder
     encoder = encoder.to(torch.float16) if half_precision else encoder
