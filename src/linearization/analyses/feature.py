@@ -21,8 +21,9 @@ def _get_sample(model, sae, data, feature_idx, layer, act_name, num_batches):
         for i in tqdm.trange(num_batches):
             tokens = data[torch.randperm(len(data))[: SAE_CFG["model_batch_size"]]]
 
-            _, cache = model.run_with_cache(tokens, names_filter=get_act_name(act_name, layer))
-            mlp_acts = cache[get_act_name(act_name, layer)]
+            layer_name = "ln2" if act_name == "normalized" else None
+            _, cache = model.run_with_cache(tokens, names_filter=get_act_name(act_name, layer, layer_name))
+            mlp_acts = cache[get_act_name(act_name, layer, layer_name)]
 
             # hidden = sae(mlp_acts)[2]
             hidden = (mlp_acts - sae.b_dec) @ sae.W_enc + sae.b_enc

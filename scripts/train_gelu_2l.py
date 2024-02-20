@@ -82,17 +82,19 @@ for seed in [42, 43]:
         cfg["out_hook_point"] = f"blocks.{layer}.hook_mlp_out"
         cfg["hook_point_layer"] = layer
         cfg["out_hook_point_layer"] = layer
+        cfg["checkpoint_path"] = f"checkpoints/64x_gelu_2l/layer{layer}/seed{seed}_transcoder"
 
         # train transcoder
         transcoder = language_model_sae_runner(LanguageModelSAERunnerConfig(**cfg))
-        move_last_checkpoint(f"checkpoints/64x_gelu_2l_{layer}/seed{seed}_transcoder")
+        # move_last_checkpoint(f"checkpoints/64x_gelu_2l/layer{layer}/seed{seed}_transcoder")
 
         # train SAE on hook_point
         # cfg = base_cfg.copy()
         # cfg["seed"] = seed
         cfg["is_transcoder"] = False
+        cfg["checkpoint_path"] = f"checkpoints/64x_gelu_2l/layer{layer}/seed{seed}_ln2_normalized"
         sparse_autoencoder = language_model_sae_runner(LanguageModelSAERunnerConfig(**cfg))
-        move_last_checkpoint(f"checkpoints/64x_gelu_2l_{layer}/seed{seed}_ln2_normalized")
+        # move_last_checkpoint(f"checkpoints/64x_gelu_2l/layer{layer}/seed{seed}_ln2_normalized")
 
         # train SAE on out_hook_point
         # cfg = base_cfg.copy()
@@ -100,5 +102,6 @@ for seed in [42, 43]:
         # cfg["is_transcoder"] = False
         cfg["hook_point"] = cfg["out_hook_point"]
         cfg["hook_point_layer"] = cfg["out_hook_point_layer"]
+        cfg["checkpoint_path"] = f"checkpoints/64x_gelu_2l/layer{layer}/seed{seed}_mlp_out"
         sparse_autoencoder = language_model_sae_runner(LanguageModelSAERunnerConfig(**cfg))
-        move_last_checkpoint(f"checkpoints/64x_gelu_2l_{layer}/seed{seed}_mlp_out")
+        # move_last_checkpoint(f"checkpoints/64x_gelu_2l/layer{layer}/seed{seed}_mlp_out")
