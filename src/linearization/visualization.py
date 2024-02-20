@@ -20,10 +20,12 @@ def fix_token(model, token):
             }
         )
     )
+    if token_str_escaped == "<|PAD|>":  # Hacky: fix OpenWebText special chars
+        token_str_escaped = ""
     return token_str_escaped
 
 
-def visualize_topk(examples, activations, columns, model, trim=10, zero_negatives=False):
+def visualize_topk(examples, activations, columns, model, trim=10, zero_negatives=False, ax=None):
     # Get sizes and pad
     n_examples, seq_length = examples.shape
     pad_width = ((0, 0), (trim, trim))
@@ -42,15 +44,16 @@ def visualize_topk(examples, activations, columns, model, trim=10, zero_negative
         trimmed_activations[i] = padded_activations[i, col - trim : col + trim + 1]
 
     # Set up plot
-    fig = plt.figure(figsize=(trimmed_examples.shape[1], trimmed_examples.shape[0] // 2))
-    ax = fig.add_subplot(111)
+    if ax is None:
+        fig = plt.figure(figsize=(trimmed_examples.shape[1], trimmed_examples.shape[0] // 2))
+        ax = fig.add_subplot(111)
 
     # Clean up examples and activations
     if zero_negatives:
         trimmed_activations[trimmed_activations < 0] = 0
 
     cax = ax.imshow(trimmed_activations, cmap="coolwarm")  # , vmin=0)
-    fig.colorbar(cax, ax=ax, orientation="vertical")
+    ax.get_figure().colorbar(cax, ax=ax, orientation="vertical")
 
     # for i, row in examples.iterrows():
     # for i, (_, row) in enumerate(examples.iterrows()):  # Hacky but I need indices
@@ -58,6 +61,10 @@ def visualize_topk(examples, activations, columns, model, trim=10, zero_negative
         for j, token in enumerate(row):
             # if token not in ["<|EOS|>", "<|PAD|>", "<|BOS|>"]:
             if token not in [0, 1, model.tokenizer.eos_token, model.tokenizer.pad_token, model.tokenizer.bos_token]:
-                plt.text(j, i, fix_token(model, token), ha="center", va="center", fontsize=8)
+                ax.text(j, i, fix_token(model, token), ha="center", va="center", fontsize=8)
+
+    # Make axes line up
+    ax.set_xlim(-0.5, trimmed_examples.shape[1] - 0.5)
+    ax.set_ylim(-0.5, trimmed_examples.shape[0] - 0.5)
 
     return ax

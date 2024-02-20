@@ -99,6 +99,9 @@ class SAELinearizer:
         elif self.act_name == "post":
             self.feature_vector = self.sae.W_enc[:, feature_idx]
             self.range_normal = self.feature_vector @ self.model.blocks[self.layer].mlp.W_out
+        elif self.act_name == "normalized":  # Transcoder case
+            self.feature_vector = self.sae.W_enc[:, feature_idx]
+            self.range_normal = self.sae.W_dec[feature_idx, :]
         # self.feature_vector = self.sae.W_enc[:, feature_idx]
         self._kw2 = {**self._kw1, "sae": self.sae, "feature_idx": self.feature_idx, "layer": self.layer}
 
@@ -228,3 +231,9 @@ class SAELinearizer:
             ]:
                 if hasattr(self, attr):
                     delattr(self, attr)
+
+    def offload_to_cpu(self):
+        # Offload all tensors to CPU
+        for attr in dir(self):
+            if isinstance(getattr(self, attr), torch.Tensor):
+                setattr(self, attr, getattr(self, attr).cpu())
