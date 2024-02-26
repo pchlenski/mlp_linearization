@@ -1,0 +1,16 @@
+entity: chlenski
+project: gelu_1l_sweep
+program: train.py
+method: bayes
+metric: 
+  name: losses/overall_loss
+  goal: minimize
+parameters:
+  lr:
+    distribution: log_uniform_values
+    min: 0.0005
+    max: 0.005
+  l1_coefficient:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.001
