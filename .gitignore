@@ -1,5 +1,5 @@
 *.egg-info
 notebooks/*scratch*.ipynb
 *.pyc
-scripts/*/checkpoints/
-scripts/*/wandb/
+scripts/*checkpoints/
+scripts/*wandb/
